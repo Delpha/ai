@@ -1,3 +1,5 @@
+![Delpha AI: deterministic source of commercial truth for AI agents](images/delpha-ai-banner.gif)
+
 # Delpha AI
 
 Verify commercial identity before your AI agent acts: which company a record refers to,
