@@ -13,8 +13,11 @@ which findings to apply to your CRM.
 ## Get started
 
 [Create a Delpha account](https://app.delpha.ai/signup) (new teams receive 100 free Credits),
-install the plugin for your client, finish Delpha sign-in, then try:
-“Who is the commercial parent of Sephora Brazil (https://www.sephora.com.br)?”
+install the plugin for your client and finish Delpha sign-in. Then ask your agent:
+
+```text
+Who is the commercial parent of Sephora Brazil (https://www.sephora.com.br)?
+```
 
 ### Claude Code
 
