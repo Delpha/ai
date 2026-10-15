@@ -1,0 +1,21 @@
+{
+  "name": "delpha",
+  "owner": {
+    "name": "Delpha",
+    "email": "support.api@delpha.io"
+  },
+  "plugins": [
+    {
+      "name": "delpha",
+      "source": "./providers/claude/plugin/",
+      "description": "Verify commercial identity for AI agents: which company a record refers to, its commercial parent and its business contacts, via the Delpha MCP server and agent skills",
+      "version": "1.0.0",
+      "author": {
+        "name": "Delpha"
+      }
+    }
+  ],
+  "metadata": {
+    "description": "Company, commercial-parent and professional-contact verification with Delpha"
+  }
+}

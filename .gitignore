@@ -1,0 +1,16 @@
+# Secrets and local config — never commit credentials
+.env
+.env.*
+*.pem
+*.key
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+.venv/

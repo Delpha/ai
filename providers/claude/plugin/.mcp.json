@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "delpha": {
+      "type": "http",
+      "url": "https://mcp.delpha.ai/mcp"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Delpha help centre
+    url: https://help.delpha.io
+    about: Questions about your account, Credits or results. Please only file issues here for bugs or requests about these skills and the plugin.
+  - name: Report a vulnerability
+    url: https://github.com/Delpha/ai/blob/main/SECURITY.md
+    about: Report security issues privately, never in a public issue.

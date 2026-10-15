@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in the skills or the plugin does not work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Do not paste API keys, tokens or personal data (emails, phone numbers, names) — describe them instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Describe the bug
+      description: What happened, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: To reproduce
+      description: The prompt or steps, and the Delpha tool that was called.
+      placeholder: |
+        1. Ask "..."
+        2. The agent calls findAndValidateWebsite
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client and version
+      placeholder: Claude Code 2.x, Codex CLI 0.16x, Cursor 2.x
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Delpha plugin version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: job-id
+    attributes:
+      label: Job ID (optional)
+      description: The job_id returned by the tool, if any. It lets us find the run without personal data.

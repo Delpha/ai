@@ -1,0 +1,2 @@
+# The plugins' skills are generated from skills/ by scripts/sync_skills.py
+providers/*/plugin/skills/** linguist-generated

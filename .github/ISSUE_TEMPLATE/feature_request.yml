@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an improvement to the skills or the plugin
+labels: ["feature-request"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The task your agent was doing and where the skills fell short.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
