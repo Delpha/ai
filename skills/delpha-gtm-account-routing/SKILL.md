@@ -29,6 +29,8 @@ Lead with the decision, then name the commercial parent, relationship, confidenc
 source when available. Include a concise route: queried company → commercial parent.
 Use current returned evidence; reference examples are not fixed answers.
 
+If the Delpha tools are unavailable or a call fails, say so and give no parent or routing
+verdict; do not substitute web search or memory.
 Do not infer CRM presence from public web data or brand familiarity.
 Do not claim a CRM write occurred; applying a route needs a separate integration and authorization.
 For legal/financial ownership questions, report the relevant ownership evidence and limitations
