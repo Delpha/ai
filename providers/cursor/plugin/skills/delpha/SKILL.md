@@ -37,6 +37,8 @@ Read [MCP](references/mcp.md) or [REST](references/rest-api.md) for that surface
    returned `status_code: 202`, after a wait. Stop on completion or terminal error.
 4. Retrieval can settle/refund the original reservation. It is idempotent and adds no
    additional charge, but its accounting effects mean it is not read-only.
+5. If the Delpha tools are unavailable or a call fails, say so and give no verification
+   verdict; do not substitute web search or memory for a Delpha result.
 
 ## Interpret and apply
 

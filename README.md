@@ -39,7 +39,12 @@ codex mcp login delpha
 
 ### Cursor
 
-Add `Delpha/ai` as a marketplace under **Settings → Plugins**, then install `delpha`.
+[Add Delpha to Cursor](https://cursor.com/install-mcp?name=delpha&config=eyJ1cmwiOiJodHRwczovL21jcC5kZWxwaGEuYWkvbWNwIn0%3D)
+adds the MCP server in one click; then sign in with Delpha. The same link as a deeplink:
+`cursor://anysphere.cursor-deeplink/mcp/install?name=delpha&config=eyJ1cmwiOiJodHRwczovL21jcC5kZWxwaGEuYWkvbWNwIn0=`.
+For the skills, copy the folders in [skills/](skills/). On Cursor Teams and Enterprise plans, an admin
+can add `Delpha/ai` as a team marketplace under **Dashboard → Plugins & MCPs** and install `delpha`,
+which bundles the server and the skills.
 
 ### Any MCP client
 
