@@ -96,4 +96,5 @@ company search. Create a key at [Developer → API keys](https://app.delpha.ai/d
 
 - [Delpha](https://delpha.ai) · [App](https://app.delpha.ai) · [Help centre](https://help.delpha.io)
 - [Data sources and privacy](https://help.delpha.io/delpha-api-and-mcp/api/data-sources-and-privacy)
+- [Plugin evals](providers/claude/plugin/evals/README.md): behaviour tests for the Claude Code plugin
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)

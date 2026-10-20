@@ -1,0 +1,4 @@
+---
+type: fixed
+---
+{"code":"ok","message":"Job succeeded.","status":"SUCCESS","status_code":200,"result":{"data_type":"social_network","normalized_value":"","label":"No","scores":{"accuracy":0,"completeness":0,"consistency":0,"validity":0},"recommendations":[{"url":"https://www.linkedin.com/in/jordan-rivera-000000000/","score":1.0,"headline":"Jordan Rivera - Delpha","rank":1,"desc":"Data Engineer & Cloud specialist - AWS · Experience: Delpha · Education: ESILV - Ecole Supérieure d'Ingénieurs Léonard de Vinci · Location: Paris · 500+ ...","company_name":"Delpha","location":"Paris","profile_name":"Jordan Rivera","job_title":"Data Engineer & Cloud specialist","match_score":1.0,"ambiguity_n":1}],"recommendation_status":"confident","fallback_used":false,"url_changed":false,"suggested_url":null,"type":"linkedin"}}

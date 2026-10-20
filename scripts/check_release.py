@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the public content: skills, links, tool names, plugin manifests and the skill copies."""
+"""Check the public content: skills, links, tool names, plugin manifests, the skill copies and the plugin evals."""
 import json
 from pathlib import Path
 import re
@@ -31,6 +31,10 @@ REST_ONLY = {"findAndValidatePhone", "findAndValidateName"}  # REST operationIds
 TOOL = re.compile(r"\b(?:findAndValidate\w+|validateAndNormalize\w+|get\w+Result)\b")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 JSON_BLOCK = re.compile(r"```json\s*\n(.*?)\n```", re.S)
+# Plugin evals: the frontmatter block of a mock or grader file, and the tool values a grader names.
+FRONTMATTER = re.compile(r"---\n(.*?)\n---[ \t]*(?:\n|$)(.*)", re.S)
+GRADER_TOOL = re.compile(r"^\s*(?:tool|before|after)\s*:[ \t]*(.*?)\s*$", re.M)
+EVAL_TOOL_PREFIX = "mcp__plugin_delpha_delpha__"
 
 
 def check_file(root, path, text):
@@ -56,6 +60,42 @@ def check_file(root, path, text):
                     problems.append(f"broken link {target}")
         for block in JSON_BLOCK.findall(text):
             json.loads(block)
+    parts = path.relative_to(root).parts
+    if "evals" in parts:
+        problems += check_eval_file(path, parts, text)
+    return problems
+
+
+def check_eval_file(path, parts, text):
+    """Plugin evals: the tool catalogue, the fixed mock bodies and the tools graders name."""
+    problems = []
+    text = text.replace("\r\n", "\n")
+    if path.name == "_tools.json" and "mocks" in parts:
+        data = json.loads(text)
+        names = {tool["name"] for tool in (data["tools"] if isinstance(data, dict) else data)}
+        if names != TOOLS:
+            problems.append(f"_tools.json names differ from TOOLS: missing {sorted(TOOLS - names)}, "
+                            f"extra {sorted(names - TOOLS)}")
+    if path.suffix != ".md":
+        return problems
+    match = FRONTMATTER.match(text)
+    head, body = match.groups() if match else ("", text)
+    if "mocks" in parts and not re.search(r"^(?:error:\s*true|type:\s*[\"']?agent[\"']?)\s*$", head, re.M | re.I) \
+            and "{{" not in body:
+        try:
+            json.loads(body)
+        except ValueError as error:
+            problems.append(f"mock body is not JSON ({error})")
+    if path.parent.name == "graders":
+        for value in GRADER_TOOL.findall(head):
+            value = value.split(" #")[0].strip()
+            if value.startswith("{"):
+                inline = re.search(r"\btool\s*:\s*([^,}]+)", value)
+                value = inline.group(1).strip() if inline else ""
+            value = value.strip("\"'")
+            if value and value != "Skill" and not (value.startswith(EVAL_TOOL_PREFIX)
+                                                   and value[len(EVAL_TOOL_PREFIX):] in TOOLS):
+                problems.append(f"grader tool {value} must be Skill or {EVAL_TOOL_PREFIX}<one of TOOLS>")
     return problems
 
 

@@ -1,0 +1,121 @@
+# Runs the Claude Code plugin's eval suite (providers/claude/plugin/evals/) with mocked
+# Delpha tools: no Delpha server is contacted and no Credit is spent, but every run and
+# every judge vote is a paid model call.
+#
+# Setup before the first run: store ANTHROPIC_API_KEY in the "evals" environment, restrict
+# that environment's deployment branches to main (so a run dispatched from another branch
+# cannot read the key), and set a spend limit on the key's workspace: --max-cost-usd is a
+# client-side list-price estimate, not a hard limit.
+name: Plugin evals
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'providers/claude/plugin/**'
+      - 'skills/**'
+      - '.github/workflows/plugin-evals.yml'
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 'Runs per case'
+        type: number
+        default: 2
+      case:
+        description: 'Case name glob, such as parent-* (* runs every case)'
+        type: string
+        default: '*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-evals
+  cancel-in-progress: false
+
+env:
+  CLAUDE_CODE_VERSION: '2.1.304'
+  THRESHOLD: '0.75'
+  DISABLE_AUTOUPDATER: '1'
+
+jobs:
+  plugin-evals:
+    environment: evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Check the Claude Code version
+        run: |
+          claude --version
+          claude --version | grep -qF "$CLAUDE_CODE_VERSION"
+      - name: Run the evals
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RUNS: ${{ github.event.inputs.runs }}
+          CASE: ${{ github.event.inputs.case }}
+        run: |
+          RUNS="${RUNS:-2}"
+          CASE="${CASE:-*}"
+          mkdir -p "$RUNNER_TEMP/eval-out"
+          claude plugin eval providers/claude/plugin --trust-plugin --ablation none \
+            --runs "$RUNS" --case "$CASE" -j 2 \
+            --model claude-sonnet-5-5 --judge-model claude-sonnet-5-5 \
+            --threshold "$THRESHOLD" --max-cost-usd 20 --no-publish \
+            --output-dir "$RUNNER_TEMP/eval-out" --json "$RUNNER_TEMP/eval-out/results.json"
+      - name: Summarize
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          results = Path(os.environ["RUNNER_TEMP"], "eval-out", "results.json")
+          lines = ["## Plugin evals", ""]
+          if not results.exists():
+              lines.append("No results file was written; the eval step failed before it finished. See its log.")
+          else:
+              data = json.loads(results.read_text())
+              aggregates = data.get("aggregates") or {}
+              lines.append(f"- Partial: {data.get('partial')} ({data.get('partialReason') or 'none'})")
+              lines.append(f"- Claude Code: {data.get('claudeVersion')}; estimated cost: ${data.get('costUsd') or 0:.2f}")
+              overall = aggregates.get("overallScore")
+              lines.append(f"- Cases passed: {aggregates.get('casesPassed')} of {aggregates.get('casesTotal')}; "
+                           f"overall score: {'n/a' if overall is None else f'{overall:.2f}'}")
+              threshold = float(os.environ["THRESHOLD"])
+              lines += ["", f"| Case | Score | Passed (score ≥ {threshold}) | Runs with every grader passing | Run errors |",
+                        "| --- | --- | --- | --- | --- |"]
+              for case in data.get("cases") or []:
+                  case_aggregates = case.get("aggregates") or {}
+                  errors = []
+                  for arm, runs in (case.get("arms") or {}).items():
+                      for index, run in enumerate(runs or []):
+                          if run.get("error"):
+                              errors.append(f"{arm} {index + 1}: {run['error']}")
+                          aborted = run.get("aborted")
+                          if aborted:
+                              reason = aborted.get("reason") if isinstance(aborted, dict) else aborted
+                              errors.append(f"{arm} {index + 1}: aborted ({reason})")
+                  cell = "; ".join(errors).replace("|", "\\|").replace("\n", " ") or "none"
+                  score = case_aggregates.get("score")
+                  rate = case_aggregates.get("passRate")
+                  passed = "n/a" if score is None else ("yes" if score >= threshold else "no")
+                  lines.append(f"| {case.get('name')} | {'n/a' if score is None else f'{score:.2f}'} | {passed} | "
+                               f"{'n/a' if rate is None else f'{rate:.0%}'} | {cell} |")
+              lines += ["", "A case passes on its score. The runs column counts the skill-fired indicator "
+                        "(weight 0.01) too, so a correct run that did not load the skill is not counted there."]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("\n".join(lines) + "\n")
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: plugin-evals-results
+          path: ${{ runner.temp }}/eval-out

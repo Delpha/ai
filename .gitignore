@@ -14,3 +14,6 @@ Thumbs.db
 # Python
 __pycache__/
 .venv/
+
+# Plugin eval results (written by claude plugin eval)
+providers/claude/plugin/evals/results/

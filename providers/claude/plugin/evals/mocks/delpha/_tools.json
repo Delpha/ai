@@ -1,0 +1,906 @@
+{
+ "tools": [
+  {
+   "name": "findAndValidateUltimateParent",
+   "title": "Find & validate ultimate parent",
+   "description": "Resolve a company's ultimate parent from one of its subsidiaries, brands or divisions: send `company_name` and `website`, both required. The parent returned is the **commercial parent**: the operating group the company is sold to and routed under. Passive holding entities set aside on the way up are flagged `is_discarded` in the ownership chain, and when a financial owner such as a fund sits above the operating group it is returned separately as `ultimate_financial_parent`. The result also carries the full ownership chain, the relationship type and a confidence score; each entity carries GLEIF metadata in `lei_data` when a match is found, `null` when none is.\n\nThe resolution is anchored on the company's website, not on its name alone: the website binds the name to one specific entity and seeds the search. Ownership is resolved from a live web search plus GLEIF/LEI lookups, not from a static database.\n\nAsync: poll `getUltimateParentResult` with the returned `job_id`.\n\nThe company name, website and country you supply are sent to Delpha's AI providers, which search the web; the parent found is checked against GLEIF's public LEI register.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "company_name": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Company Name",
+      "description": "Free-form company name as it appears commercially or legally (e.g. `Sephora Brasil`, `Waymo`, `Acme Corp`). Required.",
+      "examples": [
+       "Sephora Brasil",
+       "Waymo",
+       "Acme Corp"
+      ]
+     },
+     "website": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri",
+      "title": "Website",
+      "description": "Company's primary website (e.g. `https://www.sephora.com.br/` or `waymo.com`). Required — the anchor of the resolution: it binds the name to a specific entity and seeds the web search.",
+      "examples": [
+       "https://www.sephora.com.br/",
+       "waymo.com",
+       "acme.com"
+      ]
+     },
+     "country": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Country",
+      "description": "Optional country to disambiguate when the website's jurisdiction is unclear (e.g. `France`, `United States`, `Germany`). Free-form name; not constrained to ISO codes.",
+      "examples": [
+       "Brazil",
+       "United States",
+       "Germany"
+      ]
+     }
+    },
+    "required": [
+     "company_name",
+     "website"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Find & validate ultimate parent",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+   }
+  },
+  {
+   "name": "getUltimateParentResult",
+   "title": "Get ultimate-parent result",
+   "description": "Fetch the result of a previously submitted `findAndValidateUltimateParent` job by `job_id`. The resolver walks ownership upward from the queried company and returns as `ultimate_parent` the **commercial parent** — the operating group the company is sold to and routed under, not necessarily the top legal owner. Passive holding entities set aside on the way up stay in `ownership_chain` flagged `is_discarded`; when a financial owner such as a fund sits above the operating group, it is returned separately as `ultimate_financial_parent`.\n\nTop-level `result` fields: `ultimate_parent` (`CompanyEntity`), `relationship_type` (`Wholly Owned` / `Joint Venture` / `Member Firm/Franchise` / `Portfolio Company` / `Brand/Division` / `Independent`), `confidence` (a number in `[0, 1]` reported by the resolver), `comment`, `source_url` (cited URL, may be `null`), `ownership_chain` (**bottom-up** array; index 0 is the queried company), and `ultimate_financial_parent` (`CompanyEntity` or `null`). Each `CompanyEntity` carries `legal_name`, `commercial_name`, `country`, `website`, `website_validated`, `is_ultimate_financial_parent`, `is_discarded` and `lei_data` (GLEIF metadata or `null`).\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `ultimate_parent` (CompanyEntity): The commercial parent of the requested company: the operating group it is sold to and routed under.\n  - `legal_name` (string, nullable): The official legal name of the entity.\n  - `commercial_name` (string, nullable): The commonly-used commercial / trade name.\n  - `country` (string, nullable): The country where the entity is headquartered or registered.\n  - `website` (string, nullable): The entity's primary website URL.\n  - `website_validated` (boolean, nullable): True if the website was reachable and resolved cleanly during normalization.\n  - `lei_data` (LeiData, nullable): GLEIF Legal Entity Identifier metadata. Null if no match was found at >=80 fuzzy-match score.\n  - `is_ultimate_financial_parent` (boolean): True for the chain entity that the resolver identified as the ultimate financial parent (when it differs from the commercial parent returned as `ultimate_parent`).\n  - `entity_type` (string, nullable): The entity's legal form / classification as identified by the resolver (e.g., 'Corporation', 'Holding Shell/Foundation', 'Trust').\n  - `ownership_status` (string, nullable): Free-form ownership status of the entity as reported by the resolver (e.g., 'Unknown', 'Active').\n  - `is_discarded` (boolean, nullable): True when the resolver excluded this entity from the strategic operating chain (e.g., passive holding companies above an operating conglomerate). Lets callers distinguish operating links from holding overlays.\n  - `comment` (string, nullable): Per-entity annotation from the resolver (e.g., 'Target operating entity', 'Passive holding for control purposes').\n- `relationship_type` (string, nullable): How the requested company relates to the ultimate parent. One of: `Wholly Owned`, `Member Firm/Franchise`, `Portfolio Company`, `Brand/Division`, `Independent`, `Joint Venture`.\n- `confidence` (number): Resolver-reported confidence score in the resolved ultimate parent, from 0 to 1.\n- `ownership_chain` (array of CompanyEntity): Ordered chain from the requested company up to the ultimate parent. Empty if the requested company IS the ultimate parent. May contain intermediate holding entities; the entity with `is_ultimate_financial_parent=True` (if any) is also exposed at top level as `ultimate_financial_parent` for convenience. Fields as in `ultimate_parent`.\n- `ultimate_financial_parent` (CompanyEntity, nullable): Populated only when the ultimate financial parent differs from the commercial parent returned as `ultimate_parent` (e.g., a fund above the operating group is the actual financial owner). When populated, this is the same object as the chain entity whose `is_ultimate_financial_parent` is True. Fields as in `ultimate_parent`.\n- `comment` (string, nullable): The resolver's reasoning for the resolved hierarchy, as text. Useful for verification / auditability.\n- `source_url` (string, nullable): A URL the resolver cited as the basis for its conclusion (typically the parent's IR page or annual report).\n- `subsidiary_commercial_name` (string, nullable): The resolver's normalized commercial name for the queried (input) company. Useful when callers pass a fuzzy or legal name and want to see how it was resolved.\n- `ultimate_parent_source_level` (string, nullable): The authority level of the evidence the resolver relied on for the ultimate-parent conclusion (e.g., 'Securities Filing', 'Annual Report', 'Press Release').\n- `evidence_summary` (string, nullable): One-line trace summarizing the resolver's reasoning steps (identity verification, chain traversal, discard logic, GTM selection). Useful for audit and debugging.\n- `is_self_ultimate` (boolean, nullable): True when the queried company is its own ultimate parent (no further hierarchy above it).\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~280 seconds (this validation typically completes in 30 seconds to a few minutes), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `findAndValidateUltimateParent`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get ultimate-parent result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "findAndValidateWebsite",
+   "title": "Find & validate website",
+   "description": "Submit an asynchronous job to find and validate a company's website: send `website` to validate one, or `name` with `country` (or `linkedin`) to search for one. Returns a `job_id` — pass it to `getWebsiteResult` to retrieve the canonical URL plus accuracy, validity, completeness, and consistency scores.\n\nTwo modes:\n  - Validate an existing URL — supply `website`. The tool checks reachability and matches the site against the other entity signals. A redirect destination is adopted when it shares the input's registrable domain, when the evidence ranks it above the original, or when a scored search candidate corroborates it; otherwise the normalized input is kept.\n  - Search — supply entity signals (`name` + `country`, or `linkedin`; a bare domain sent as `website` is validated instead) and the tool finds the most likely website. `country` materially improves accuracy and disambiguates same-named companies across regions. Optional.\n\nThe name and country you supply are sent to a web-search provider and to Delpha's AI provider. A website you supply, or one found by search, is visited to check it.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "website": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Website",
+      "description": "URL to validate (e.g. `https://delpha.io/`). When set, the tool runs in validation mode.",
+      "examples": [
+       "https://delpha.io/"
+      ]
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name",
+      "description": "Entity name to search for (e.g. `Bolt`). Paired with `country` it separates same-named companies in different regions.",
+      "examples": [
+       "Delpha"
+      ]
+     },
+     "linkedin": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Linkedin",
+      "description": "LinkedIn entity URL (e.g. `https://www.linkedin.com/company/delphainc/`). Strong company signal.",
+      "examples": [
+       "https://www.linkedin.com/company/delphainc/"
+      ]
+     },
+     "country": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Country",
+      "description": "Country of the entity as a display name (e.g. `Estonia`). Materially improves accuracy and disambiguates same-named companies across regions — `Bolt` in Estonia and `Bolt` in the United States are different companies. Optional.",
+      "examples": [
+       "France"
+      ]
+     }
+    },
+    "required": [],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Find & validate website",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+   }
+  },
+  {
+   "name": "getWebsiteResult",
+   "title": "Get website validation result",
+   "description": "Fetch the result of a previously submitted `findAndValidateWebsite` job by `job_id`. On success, the `result` payload contains the `normalized_value` URL, a `label` (e.g. `OK`), the four `scores` (validity, completeness, accuracy, consistency), and a `recommendations` array of alternative URLs each ranked by confidence. A redirect destination is adopted when it shares the input's registrable domain, when the evidence ranks it above the original, or when a scored search candidate corroborates it; otherwise the normalized input is kept. An adopted URL is reduced to `scheme://host/`, and a corroborated host may replace its host. `Changed` reports exactly that adopted move; `Unknown` means the request named no company, so accuracy had no basis, and is not a negative verdict on the URL.\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `data_type` (string): The type of data for this field One of: `email`, `social_network`, `name`, `legal_id`, `phone`, `address`, `website`.\n- `normalized_value` (string): Normalized website value.\n- `label` (string): Accuracy verdict for the submitted website. `OK` — the search confirmed it. `Changed` — the site has moved: a redirect landed on a different registrable domain and the evidence ranked that destination above the original, so it was adopted. `No` — a request that named a company found nothing supporting this website. `Unknown` — the request named no company, so accuracy had no basis (`-1`); this is not a negative verdict on the URL.\n\nA redirect destination is adopted when it shares the input's registrable domain, or when the evidence ranks it above the original, or when a scored search candidate corroborates it — otherwise the normalized input is kept, which is what happens to a same-name different-TLD landing the evidence does not prefer. An adopted URL is reduced to `scheme://host/`, possibly using a corroborated host. One of: `No`, `OK`, `Changed`, `Unknown`.\n- `scores` (ScoresModel): Scores for the field\n  - `accuracy` (number): Accuracy score\n  - `validity` (integer): Validity score\n  - `completeness` (number): Completeness score\n  - `consistency` (integer): Consistency score\n- `recommendations` (array of WebsiteRecommendation): Recommendations for the website.\n  - `url` (string): Recommended website value.\n  - `score` (number): Confidence score for the recommendation.\n  - `metadata` (WebsiteMetadata, nullable): Google-search metadata (name, title, summary, rank) for the recommended website. Null when the recommendation comes from a path that does not produce search metadata (email-domain, social-network, or direct-website validation).\n  - `source_path` (array of object): Ordered list of upstream blocks that produced this recommendation, each tagged with a `name`. Allows downstream consumers to attribute a recommendation to the engine path it came from (e.g. `[{\"name\": \"Name\"}]` for Google search by company name).\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~25 seconds (this validation typically completes in ~10 seconds), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `findAndValidateWebsite`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get website validation result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "findAndValidateLegalID",
+   "title": "Find & validate legal ID",
+   "description": "Submit an asynchronous job to find and validate a company's legal identifier (SIRET, SIREN, NZBN, ABN, CIK, ...): send `legal_id` to validate one or `name` to search for one, plus `legal_id_type` or `address.country` to select the registry. The identifier is a business registry number, never a personal identifier. Returns a `job_id` — pass it to `getLegalIDResult` to retrieve the normalized identifier, the resolved `legal_id_type`, and validity / accuracy scores.\n\n**Registry selection:** the job targets one registry, resolved from either of two fields:\n  - `legal_id_type` — the registry directly (e.g. `FRA - SIRET`, `GBR - COMPANY REGISTRATION NUMBER`), or\n  - `address.country` — the entity's country, from which the registry is inferred.\n\nA call that provides neither is rejected with 400 (`Either 'legal_id_type' or 'address.country' must be provided`) — e.g. `{name, website}` alone fails. The remaining fields select the mode: `legal_id` runs validation and `name` runs search — a call with neither is rejected with 400; `website` only adds a country signal.\n\n**Coverage:** only the registries in the `legal_id_type` enum can be queried. A request naming any other registry, or a country that has no registry in that list, is refused with **422 `unsupported_registry`** *before any credit is reserved*; the message lists the supported countries. That refusal depends only on the registry or country requested, so the same country returns it again whatever `name` or `legal_id` carries. An explicit `legal_id_type` takes precedence over `address.country`, so a supported registry with an unsupported country still runs.\n\nThe name or identifier you supply is matched against Delpha's company datalake and, when needed, the public registry of the selected country. A company found in a registry is added to the datalake.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name",
+      "description": "Legal or trade name of the entity (e.g. `Delpha`).",
+      "examples": [
+       "Delpha"
+      ]
+     },
+     "legal_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Legal Id",
+      "description": "Existing business registry number to validate (e.g. SIRET `88052440000012`) — never a personal identifier. Format is registry-specific; supply `legal_id_type` when the format is ambiguous.",
+      "examples": [
+       "88052440000012"
+      ]
+     },
+     "legal_id_type": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "FRA - SIRET",
+         "FRA - SIREN",
+         "NZL - NZBN",
+         "AUS - ABN",
+         "NOR - ORGANISASJONSNUMMER",
+         "CHE - UID",
+         "GBR - COMPANY REGISTRATION NUMBER",
+         "BEL - ENTERPRISE NUMBER",
+         "DEU - HANDELSREGISTERNUMMER",
+         "EST - COMMERCIAL REGISTER CODE",
+         "IRL - CRO NUMBER",
+         "ESP - NIF",
+         "NLD - KVK-NUMMER",
+         "CAN - CORPORATION-NUMBER",
+         "FIN - Y-TUNNUS",
+         "SWE - ORGANISATIONSNUMMER",
+         "USA - CIK"
+        ],
+        "title": "LegalIDType",
+        "description": "The legal ID registries Delpha can currently query.\n\nA request naming a registry outside this list is refused before any credits are\nconsumed."
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Registry the `legal_id` belongs to. Closed enum of the registries Delpha can query today (e.g. `FRA - SIRET`, `USA - CIK`); any other value is refused with 422 `unsupported_registry` before any credit is reserved. Required only when the same numeric format exists in multiple registries.",
+      "examples": [
+       "FRA - SIRET"
+      ]
+     },
+     "address": {
+      "anyOf": [
+       {
+        "properties": {
+         "street": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "title": "Street",
+          "description": "The street",
+          "examples": [
+           "3 AVENUE VAVIN"
+          ]
+         },
+         "city": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "title": "City",
+          "description": "The city",
+          "examples": [
+           "Paris"
+          ]
+         },
+         "state": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "title": "State",
+          "description": "The state",
+          "examples": [
+           "Ile de France"
+          ]
+         },
+         "postal_code": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "title": "Postal Code",
+          "description": "The zip code",
+          "examples": [
+           "75006"
+          ]
+         },
+         "country": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "title": "Country",
+          "description": "The country",
+          "examples": [
+           "France"
+          ]
+         }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AddressInput",
+        "description": "Registered address of the company whose identifier is looked up — never a\nperson's location. `country` alone selects the registry; the other fields\nseparate registrations that share a name."
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Registered address of the company whose identifier is looked up — never a person's location. `country` alone selects the registry; the other fields separate registrations that share a name.",
+      "examples": [
+       {
+        "city": "Paris",
+        "country": "France",
+        "postal_code": "75006",
+        "state": "Ile de France",
+        "street": "3 AVENUE VAVIN"
+       }
+      ]
+     },
+     "website": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Website",
+      "description": "Entity website — the domain is used as a country signal during registry resolution.",
+      "examples": [
+       "https://delpha.io/"
+      ]
+     }
+    },
+    "required": [],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Find & validate legal ID",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+   }
+  },
+  {
+   "name": "getLegalIDResult",
+   "title": "Get legal ID validation result",
+   "description": "Fetch the result of a previously submitted `findAndValidateLegalID` job by `job_id`. On success, the `result` payload contains the normalized legal identifier, the resolved `legal_id_type` (which registry it belongs to), the validity / accuracy scores, a `match` object with the enriched company record (account name, address, annual revenue, employee count, industry, formation date, company type, website) when a confident match is found, and a `suggestions` array of alternative company records each ranked by confidence.\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `data_type` (string): The type of data for this field One of: `email`, `social_network`, `name`, `legal_id`, `phone`, `address`, `website`.\n- `normalized_value` (string): Normalized legal ID value.\n- `label` (string): Label for the legal ID. One of: `No`, `OK`, `Unknown`.\n- `legal_id_type` (string, nullable): The type of legal ID. Free-form: it normally matches one of the types accepted on submission. Null when no registry could be determined.\n- `scores` (ScoresModel): Scores for the field\n  - `accuracy` (number): Accuracy score\n  - `validity` (integer): Validity score\n  - `completeness` (number): Completeness score\n  - `consistency` (integer): Consistency score\n- `match` (LegalIDSuggestion, nullable): The match information\n  - `score` (number): Confidence score for the suggestion.\n  - `account_name` (string): The account name\n  - `industry` (IndustryModel, nullable): The industry information\n  - `website` (Website, nullable): The website\n  - `address` (LegalIDAddress, nullable): The address information\n  - `financials` (Financials, nullable): Filed financial figures for the company's most recent fiscal period, as published by its national register. Replaces the former `annual_revenue` field, which is no longer returned.\n  - `employees_nb` (EmployeesNbModel, nullable): The employee number information\n  - `source` (string, nullable): The source URL\n  - `company_type` (CompanyTypeModel, nullable): The company type information\n  - `date` (DateModel, nullable): The date information\n  - `legal_id_type` (string): The legal ID type. Free-form: it normally matches one of the types accepted on submission, but a record sourced from the datalake may carry a historical type.\n  - `legal_id` (string): The legal ID\n  - `headquarters_site` (HeadquartersSite, nullable): The suggested entity's headquarters site, with its legal identifier — resolved from the datalake's parent link, never from the top of the ownership group. `null` when the record names no parent; the `legal_id` alone is absent when the parent record could not be resolved, and the name then falls back to the one stored inline on the link.\n  - `site_type` (string, nullable): Whether this record is the company's headquarters: 'headquarters', 'branch', or 'unknown' when the datalake holds no value. Open vocabulary -- new values may be added, so treat this as a string, not a closed enum.\n  - `vat` (string, nullable): The VAT identifier of the suggested entity, when the datalake has one.\n- `suggestions` (array of LegalIDSuggestion): Suggestions for the legal ID. Fields as in `match`.\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~25 seconds (this validation typically completes in ~5-10 seconds), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `findAndValidateLegalID`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get legal ID validation result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "findAndValidateLinkedInCompanyPage",
+   "title": "Find & validate a company's LinkedIn page",
+   "description": "Submit an asynchronous job to find and validate the LinkedIn page of a COMPANY: send `url` to validate one, or `company_name` (with `website` for precision) to search for one. Returns a `job_id` — pass it to `getLinkedInCompanyPageResult` to retrieve the canonical page URL plus accuracy and validity scores.\n\nTwo modes:\n  - Validate an existing page — supply `url`.\n  - Search — supply `company_name`, adding `website` for precision.\n\n`findAndValidateLinkedInProfile` covers a PERSON — this operation looks for `/company/`, `/school/` and `/showcase/` pages only.\n\nThese results are processed from the company website and from public web search: Google results, retrieved through Google Custom Search API or a SERP provider. No LinkedIn account, session or credential is used, and no third-party database is consulted. The company name and country you supply are sent to that search provider, and the company website you supply — or the domain of an email address you supply, which itself never leaves Delpha — is requested directly. A URL you submit for validation is never requested: its format is checked, and it may be searched for through that search provider.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "url": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url",
+      "description": "LinkedIn company page URL to validate (e.g. `https://www.linkedin.com/company/delphainc/`). When set, the operation runs in validation mode.",
+      "examples": [
+       "https://www.linkedin.com/company/delphainc/"
+      ]
+     },
+     "website": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Website",
+      "description": "Company website (e.g. `https://delpha.io/`). The strongest signal after the name. Optional.",
+      "examples": [
+       "https://delpha.io/"
+      ]
+     },
+     "company_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Company Name",
+      "description": "Company whose LinkedIn page is being looked up (e.g. `Delpha`). Required when `url` is not supplied. Paired with `website` it narrows the search further.",
+      "examples": [
+       "Delpha"
+      ]
+     },
+     "country": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Country",
+      "description": "Country of the company, used to disambiguate the match (e.g. `France` or `FR`). Accepts an ISO 3166-1 alpha-2 code or a plain English country name. Optional.",
+      "examples": [
+       "France",
+       "FR"
+      ]
+     }
+    },
+    "required": [],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Find & validate a company's LinkedIn page",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+   }
+  },
+  {
+   "name": "getLinkedInCompanyPageResult",
+   "title": "Get LinkedIn company page result",
+   "description": "Fetch the result of a previously submitted `findAndValidateLinkedInCompanyPage` job by `job_id`. On success, the `result` payload contains the canonical company page URL, accuracy and validity scores, and a `recommendations` array of candidate pages (each carrying `url`, `headline`, `desc`, `company_name`, `location`, and a confidence `score`) when the match is uncertain. In search mode the top-level `label` and scores are often `\"No\"` and 0 while `recommendations` still holds the candidates. Each candidate carries a `desc` and a `headline`; unrelated companies can share a name across countries, so those two fields are what tell them apart.\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `data_type` (string): The type of data for this field. One of: `email`, `social_network`, `name`, `legal_id`, `phone`, `address`, `website`.\n- `normalized_value` (string): Normalized LinkedIn company page URL.\n- `label` (string): Label for the LinkedIn value. One of: `No`, `OK`, `Unknown`.\n- `scores` (ScoresModel): Scores for the field.\n  - `accuracy` (number): Accuracy score\n  - `validity` (integer): Validity score\n  - `completeness` (number): Completeness score\n  - `consistency` (integer): Consistency score\n- `recommendations` (array of LinkedInCompanyPageRecommendation): Candidate company pages, best first.\n  - `url` (string): Recommended LinkedIn company page URL (a `/company/`, `/school/` or `/showcase/` page).\n  - `score` (number): Confidence score for the recommendation.\n  - `headline` (string, nullable): The search result's headline — the title line Google renders for this page, usually the page name.\n  - `rank` (integer, nullable): Rank of the recommendation.\n  - `desc` (string, nullable): Description of the recommended page, as the search result renders it.\n  - `company_name` (string, nullable): Company name shown on the recommended page.\n  - `location` (string, nullable): Location shown on the recommended page.\n  - `match_score` (number, nullable): Pure match quality of this candidate against the company in the request, before the ambiguity division. `score` = `match_score / ambiguity_n`.\n  - `ambiguity_n` (integer, nullable): How many candidates scored within 10% of the best match. Greater than 1 means several pages match comparably well and the divided `score` reflects that ambiguity, not a poor match.\n- `recommendation_status` (string, nullable): Reading of the recommendation situation: 'confident' (one clear winner), 'ambiguous' (several candidates match comparably well — see each candidate's ambiguity_n), or 'no_match' (no credible page found). Vocabulary may grow; treat unknown values as informational.\n- `type` (string, nullable): The social network the assessed value belongs to. Always `linkedin` on these operations — Delpha assesses no other network today — it is provenance, not a discriminator.\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~25 seconds (this validation typically completes in ~10 seconds), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `findAndValidateLinkedInCompanyPage`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get LinkedIn company page result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "findAndValidateEmail",
+   "title": "Find, validate & qualify email",
+   "description": "Find, validate, and qualify a person's email address: send `email` to verify it, or `first_name`, `last_name` and `website` together to search for it. Submit an asynchronous job; the returned `job_id` goes to `getEmailResult`, which yields the validated email, the `email_status` (Valid / ...), `email_domain_qualification` (whether the address's domain is a public/personal mail domain or a company domain, and whether it accepts mail at any address; see `getEmailResult`), the qualified domain, the scores (validity / completeness / accuracy / consistency), and ranked suggestions (both inferred from the input and from the company website).\n\nTwo modes — at least one must be fully satisfied:\n  - Validation mode: provide `email` alone to verify deliverability and qualify the domain.\n  - Recommendation mode: provide `first_name`, `last_name`, AND `website` together (all three required) to search for the address. Partial recommendation inputs are rejected with 400.\nSupplying both an email and the recommendation triple runs both paths in the same job.\n\nThis result comes from Delpha's own verification and a Delpha model; no contact database and no third-party database is used. Candidate addresses are generated from per-domain address patterns, not retrieved from a list of known addresses. The address you supply — or an address formed from the name and company website you supply — reaches the mail infrastructure of that address's own domain.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "email": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "email"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email",
+      "description": "RFC 5321 mailbox to validate (e.g. `jordan.rivera@delpha.io`). When provided, the tool verifies deliverability rather than searching. Optional; without it, `first_name`, `last_name` and `website` must all be set.",
+      "examples": [
+       "jordan.rivera@example.com"
+      ]
+     },
+     "first_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "First Name",
+      "description": "Person's given name (e.g. `Jordan`). Combined with `last_name` and a company signal (`website`) to search for the address.",
+      "examples": [
+       "Jordan"
+      ]
+     },
+     "last_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Name",
+      "description": "Person's family name (e.g. `Rivera`). Pair with `first_name`.",
+      "examples": [
+       "Rivera"
+      ]
+     },
+     "website": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Website",
+      "description": "Company website associated with the person (e.g. `https://delpha.io/`). Used as the company signal when searching by name; the tool extracts and qualifies the domain.",
+      "examples": [
+       "https://delpha.io/"
+      ]
+     }
+    },
+    "required": [],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Find, validate & qualify email",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+   }
+  },
+  {
+   "name": "getEmailResult",
+   "title": "Get email validation result",
+   "description": "Fetch the result of a previously submitted `findAndValidateEmail` job by `job_id`. On success, the `result` payload contains: the validated email (`normalized_value`); `email_status` (closed enum: `\"Valid\"`, `\"Invalid\"`, `\"Unknown\"`); `email_domain_qualification`, which reports two properties of the address's domain — whether it is a public/personal mail domain or a company domain, and whether it accepts mail at any address (closed enum: `\"nominative@perso\"` = a public/personal mail domain that rejects unknown addresses; `\"catchall@perso\"` = a public/personal mail domain that accepts any address; `\"nominative@pro\"` = a company domain that rejects unknown addresses; `\"catchall@pro\"` = a company domain that accepts any address, so acceptance is not evidence the mailbox exists; `\"Unknown\"` = the domain could not be classified, for instance because it greylisted the probe or its server failed temporarily); a top-level `label` summarising the outcome (closed enum: `\"OK\"`, `\"No\"`, `\"OddFormat\"`); the qualified domain; the four `scores` (validity, completeness, accuracy, consistency); and ranked `suggestions` (alternative addresses scored by likelihood) when no exact match is found.\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `label` (string): Label for the email. One of: `No`, `OK`, `OddFormat`.\n- `normalized_value` (string): Normalized email value.\n- `provider` (string, nullable): Provider of the email, if any.\n- `email_domain` (string, nullable): Domain of the email. `null` when the address carries no parseable domain (a syntactically invalid address, which returns `label: \"No\"`).\n- `email_domain_qualification` (string): Qualification of the email domain. One of: `nominative@pro`, `catchall@pro`, `nominative@perso`, `catchall@perso`, `Unknown`.\n- `email_status` (string): Status of the email. Possible values: 'Invalid', 'Unknown', 'Valid'. One of: `Invalid`, `Unknown`, `Valid`.\n- `email_address_qualification` (string, nullable): Address-level qualification of the mailbox, when one applies: `Spam Trap` (an address Delpha holds on a list of addresses used to detect unsolicited mail rather than read by a person) or `Role-based` (a shared functional mailbox such as `contact@`/`support@`, not a person). `null` means neither applies. ⚠️ This takes precedence over `email_domain_qualification`, which describes the DOMAIN rather than this address: a `Role-based` mailbox on a nominative professional domain is still role-based. The vocabulary may grow, so an unrecognised value is informational rather than an error.\n- `suggestions` (array of EmailSuggestion): Suggestions for the email.\n  - `value` (string): Suggested email value.\n  - `score` (number): Confidence score for the suggestion.\n- `website_domain` (string, nullable): Website domain associated.\n- `website_domain_qualification` (string, nullable): Qualification of the website domain. One of: `nominative@pro`, `catchall@pro`, `nominative@perso`, `catchall@perso`, `Unknown`.\n- `suggestions_from_website` (array of EmailSuggestion): Suggestions from the website. Fields as in `suggestions`.\n- `data_type` (string): The type of data for this field One of: `email`, `social_network`, `name`, `legal_id`, `phone`, `address`, `website`.\n- `scores` (ScoresModel): Scores for the field\n  - `accuracy` (number): Accuracy score\n  - `validity` (integer): Validity score\n  - `completeness` (number): Completeness score\n  - `consistency` (integer): Consistency score\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~180 seconds (this validation typically completes in ~5 seconds), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `findAndValidateEmail`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get email validation result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "validateAndNormalizePhone",
+   "title": "Validate & normalize phone number",
+   "description": "Submit an asynchronous job to validate and normalize a phone number you supply: send `phone`, with `country_code` when it is not in E.164 form. Returns a `job_id` — pass it to `getPhoneResult` to retrieve the E.164-formatted number, its line type, carrier, time zone and country, validity / completeness / consistency scores, and a `confidence` rating of the parse.\n\n`phone` is required. A number in E.164 form (e.g. `+33672557378`) carries its own country. A national-format number (e.g. `0672557378`) is normalized only when its country is supplied — `country_code` (ISO 3166-1 alpha-2); one sent without a country is rejected with 400.\n\nIt is meant for a number already held in a record — to check it before the record is used or stored, or to bring numbers into one format. It does not search: it finds no phone number for a person or a company, and everything it returns describes the number supplied.\n\nThis result is obtained by parsing the submitted number and verifying it against data from carriers and cross-carrier network enablers, through Delpha's providers. Delpha verifies only the number itself (validity, line type, carrier, connection status) and does not link it to an individual, a name or any other personal data. Those providers receive the number in E.164 form and a two-letter country code, and nothing else.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "phone": {
+      "type": "string",
+      "title": "Phone",
+      "description": "Phone number to validate and normalize. E.164 form (e.g. `+33672557378`) is preferred and carries its own country; a national-form number (e.g. `0672557378`) is read only together with its country — see `country_code`. Required.",
+      "examples": [
+       "+33672557378",
+       "0672557378"
+      ]
+     },
+     "country_code": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^[A-Z]{2}$"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Country Code",
+      "description": "ISO 3166-1 alpha-2 country code (e.g. `FR`, `US`, `GB`). Supplies the numbering plan that a `phone` not in E.164 form needs; a number in E.164 form carries its own.",
+      "examples": [
+       "FR"
+      ]
+     }
+    },
+    "required": [
+     "phone"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Validate & normalize phone number",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+   }
+  },
+  {
+   "name": "getPhoneResult",
+   "title": "Get phone validation result",
+   "description": "Fetch the result of a previously submitted `validateAndNormalizePhone` job by `job_id`. On success, the `result` payload contains the E.164-formatted `normalized_value`, the `phone_type` (one of `FIXED_LINE`, `MOBILE`, `FIXED_LINE_OR_MOBILE`, `TOLL_FREE`, `PREMIUM_RATE`, `SHARED_COST`, `VOIP`, `PERSONAL_NUMBER`, `PAGER`, `UAN`, `VOICEMAIL`), the `carrier` name, the `timezone`, the `zone` (ISO 3166-1 alpha-2 country code), the `area` (an English place name for the number — a city or region for many fixed lines, otherwise usually the country; empty when no place is known), and the `validity`, `completeness` and `consistency` scores with a `confidence` rating of the parse. `accuracy` is not assessed for phone numbers and is always `-1`.\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `data_type` (string): The type of data for this field One of: `email`, `social_network`, `name`, `legal_id`, `phone`, `address`, `website`.\n- `normalized_value` (string, nullable): Normalized phone value.\n- `phone_type` (string, nullable): The type of phone number One of: `FIXED_LINE`, `MOBILE`, `FIXED_LINE_OR_MOBILE`, `TOLL_FREE`, `PREMIUM_RATE`, `SHARED_COST`, `VOIP`, `PERSONAL_NUMBER`, `PAGER`, `UAN`, `VOICEMAIL`.\n- `carrier` (string, nullable): The carrier of the phone number\n- `timezone` (string, nullable): The timezone of the phone number\n- `zone` (string, nullable): The zone of the phone number\n- `area` (string, nullable): The area of the phone number\n- `activity_score` (integer, nullable): How recently the line has shown activity, on the second-tier line-type provider's own 0-100 scale. `null` whenever that provider was not consulted — which is the common case, since it is called only to resolve an ambiguous line type.\n- `is_prepaid` (boolean, nullable): Whether the number is a prepaid line, from the second-tier line-type provider. `null` whenever that provider was not consulted — see `activity_score`.\n- `scores` (PhoneScoresModel): Scores for the field\n  - `accuracy` (number): Accuracy score\n  - `validity` (integer): Validity score\n  - `completeness` (number): Completeness score\n  - `consistency` (integer): Consistency score\n  - `confidence` (number): How much to trust the normalization, from the phone library's own reliability verdict: `1` (high), `0.5` (medium) or `0` (low, or not reported). It rates the PARSE, not whether the line is reachable — that is `validity`.\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~25 seconds (this validation typically completes in ~5 seconds), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `validateAndNormalizePhone`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get phone validation result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "validateAndNormalizeName",
+   "title": "Validate & normalize person name",
+   "description": "Submit an asynchronous job to validate and normalize a person's name: send `first_name` and `last_name`, both required. Returns a `job_id` — pass it to `getNameResult` to retrieve the normalized first / last name, the validity / completeness / consistency scores, the misspelled and reversed scores, and ranked alternative spellings.\n\nNormalization fixes capitalization and spacing. In the last name it also drops a recognized title or suffix (e.g. `Smith PhD` becomes `SMITH`) and anything in parentheses or after a comma; the first name keeps its words. Characters outside the Latin script are removed — a name written entirely in another script normalizes to an empty string.\n\nIt is meant for a name already held in a record — to clean it up before the record is used or stored, or to catch a typo or a first and last name entered the wrong way round. It does not search: it does not look a person up or return anything about them beyond the name itself, and everything it returns is derived from the two names supplied and Delpha's own reference data. Both `first_name` and `last_name` are required.\n\nThis result is computed inside Delpha's own infrastructure, from the name you supply and Delpha's own reference data. Nothing leaves Delpha for this operation, and the submitted name is retained in your account's resolution history for its configured retention period.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "first_name": {
+      "type": "string",
+      "title": "First Name",
+      "description": "Person's given name (e.g. `Jordan`). Required.",
+      "examples": [
+       "Jordan"
+      ]
+     },
+     "last_name": {
+      "type": "string",
+      "title": "Last Name",
+      "description": "Person's family name (e.g. `Rivera`). Required.",
+      "examples": [
+       "Rivera"
+      ]
+     }
+    },
+    "required": [
+     "first_name",
+     "last_name"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Validate & normalize person name",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "getNameResult",
+   "title": "Get name validation result",
+   "description": "Fetch the result of a previously submitted `validateAndNormalizeName` job by `job_id`. On success, the `result` payload contains the normalized first / last name, a `label` (e.g. `OK`), per-field scores (`validity`, `completeness`, `consistency`, `misspelled` — each broken down into `{first_name, last_name}` objects — plus scalar `accuracy` and `reversed` (likelihood the first/last name are swapped)), and ranked `suggestions` for both `first_name` and `last_name` carrying alternative spellings with confidence scores.\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `data_type` (string): The type of data for this field One of: `email`, `social_network`, `name`, `legal_id`, `phone`, `address`, `website`.\n- `normalized_value` (NormalizedNameModel): Normalized name value.\n  - `first_name` (string): The first name of the entity\n  - `last_name` (string): The last name of the entity\n- `label` (string): Label for the name. One of: `No`, `OK`, `Misspelled`, `Reversed`.\n- `scores` (NameScoresModel): Scores for the field\n  - `accuracy` (number): The accuracy of the name\n  - `reversed` (number): The reversed of the name\n  - `misspelled` (DoubleScoresModel): The misspelled of the names\n  - `consistency` (DoubleScoresModel): The consistency of the names Fields as in `misspelled`.\n  - `validity` (DoubleScoresModel): The validity of the names Fields as in `misspelled`.\n  - `completeness` (DoubleScoresModel): The completeness of the names Fields as in `misspelled`.\n- `suggestions` (NameRecommendation): Recommendations for the name.\n  - `first_name` (array of SingleNameRecommendation): The first name of the entity\n  - `last_name` (array of SingleNameRecommendation): The last name of the entity Fields as in `first_name`.\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~25 seconds (this validation typically completes in ~5 seconds), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `validateAndNormalizeName`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get name validation result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "findAndValidateLinkedInProfile",
+   "title": "Find & validate a person's LinkedIn profile",
+   "description": "Submit an asynchronous job to find and validate the LinkedIn profile of a PERSON: send `url` to validate one, or `first_name` and `last_name` with `company_name` or `website` to search for one. Returns a `job_id` — pass it to `getLinkedInProfileResult` to retrieve the canonical profile URL plus accuracy and validity scores.\n\nTwo modes:\n  - Validate an existing profile — supply `url`.\n  - Search — supply `first_name` + `last_name` plus company context (`company_name` and/or `website`); an `email` contributes only its domain, as `website` would. Company context narrows the search among people who share a name; without it a namesake can rank first, and for a very common name a namesake can rank first even with it.\n\n`findAndValidateLinkedInCompanyPage` covers a COMPANY's page — this operation looks for `/in/` profiles only.\n\nThe search is built only from the fields in this request; nothing carries over from a previous job.\n\nThese results are processed in real time from public web search: Google results, retrieved through Google Custom Search API or a SERP provider. No LinkedIn account, session or credential is used, and no contact database or third-party database is consulted. The name, company and country you supply are sent to that search provider. An email address you supply never leaves Delpha: only its domain is used, as a company website, and a company website is requested directly only when no name is given. A URL you submit for validation is never requested: its format is checked, and it may be searched for through that search provider.\n\n**Cost:** an accepted call spends 1 credit and starts a new job; a repeat with the same input starts another and is charged again. The call and its result are kept in your team's resolution history for its configured retention.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "url": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url",
+      "description": "LinkedIn profile URL to validate (e.g. `https://www.linkedin.com/in/jordan-rivera-000000000/`). When set, the operation runs in validation mode.",
+      "examples": [
+       "https://www.linkedin.com/in/jordan-rivera-000000000/"
+      ]
+     },
+     "website": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uri"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Website",
+      "description": "Employer website (e.g. `https://delpha.io/`). The employer domain disambiguates a person who shares a name with others. Optional.",
+      "examples": [
+       "https://delpha.io/"
+      ]
+     },
+     "company_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Company Name",
+      "description": "Company the person works at (e.g. `Delpha`). Company affiliation separates people who share a name; paired with `website` it narrows the search further. Optional.",
+      "examples": [
+       "Delpha"
+      ]
+     },
+     "first_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "First Name",
+      "description": "Person's given name (e.g. `Jordan`). Required when `url` is not supplied.",
+      "examples": [
+       "Jordan"
+      ]
+     },
+     "last_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Name",
+      "description": "Person's family name (e.g. `Rivera`). Pair with `first_name`.",
+      "examples": [
+       "Rivera"
+      ]
+     },
+     "country": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Country",
+      "description": "The person's country, used to disambiguate the match (e.g. `France` or `FR`). Accepts an ISO 3166-1 alpha-2 code or a plain English country name. Optional.",
+      "examples": [
+       "France",
+       "FR"
+      ]
+     }
+    },
+    "required": [],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Find & validate a person's LinkedIn profile",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+   }
+  },
+  {
+   "name": "getLinkedInProfileResult",
+   "title": "Get LinkedIn profile result",
+   "description": "Fetch the result of a previously submitted `findAndValidateLinkedInProfile` job by `job_id`. On success, the `result` payload contains the canonical profile URL, accuracy and validity scores, and a `recommendations` array of candidate profiles (each carrying `url`, `headline`, `desc`, `company_name`, `location`, `profile_name`, and a confidence `score`) when the match is uncertain. In search mode the top-level `label` and scores are often `\"No\"` and 0 while `recommendations` still holds the candidates. A namesake can outrank the intended person even when company context was supplied, so `recommendations[0]` is a ranked candidate rather than a confirmed match; each candidate's `company_name` and `desc` are what distinguish one from another.\n\n**Result fields** (`result`, populated once `status_code == 200`):\n- `data_type` (string): The type of data for this field. One of: `email`, `social_network`, `name`, `legal_id`, `phone`, `address`, `website`.\n- `normalized_value` (string): Normalized LinkedIn profile URL.\n- `label` (string): Label for the LinkedIn value. One of: `No`, `OK`, `Unknown`.\n- `scores` (ScoresModel): Scores for the field.\n  - `accuracy` (number): Accuracy score\n  - `validity` (integer): Validity score\n  - `completeness` (number): Completeness score\n  - `consistency` (integer): Consistency score\n- `recommendations` (array of LinkedInRecommendation): Candidate profiles, best first.\n  - `url` (string): Recommended LinkedIn profile URL.\n  - `score` (number): Confidence score for the recommendation.\n  - `headline` (string, nullable): The search result's headline — the title line Google renders for this profile, usually 'Name - job title - company'. ⚠️ This is NOT LinkedIn's 'headline' profile field — that is `job_title`.\n  - `rank` (integer, nullable): Rank of the recommendation.\n  - `desc` (string, nullable): Description of the recommended profile, as the search result renders it.\n  - `company_name` (string, nullable): Company the person works at, as the recommended profile shows it.\n  - `location` (string, nullable): Location shown on the recommended profile.\n  - `profile_name` (string, nullable): The person's name on the recommended profile.\n  - `job_title` (string, nullable): Job title of the recommended profile, as LinkedIn shows it. Usually taken from the structured job-title slot of the search result; when that is absent it falls back to the profile's LinkedIn headline, so it can read as free text ('Fortune 100 Executive | P&L Leader') rather than a clean role, and Google sometimes clips it with an ellipsis. Null when the search result carried no job title.\n  - `match_score` (number, nullable): Pure match quality of this candidate against the person in the request, before the ambiguity division. `score` = `match_score / ambiguity_n`.\n  - `ambiguity_n` (integer, nullable): How many candidates scored within 10% of the best match. Greater than 1 means several profiles match comparably well and the divided `score` reflects that ambiguity, not a poor match.\n- `recommendation_status` (string, nullable): Reading of the recommendation situation: 'confident' (one clear winner), 'ambiguous' (several candidates match comparably well — see each candidate's ambiguity_n), or 'no_match' (no credible profile found). Vocabulary may grow; treat unknown values as informational.\n- `fallback_used` (boolean, nullable): True when the emitted recommendations come from the name-only fallback search: no credible profile was found at the queried company, but same-name profiles exist elsewhere (a possible job-change signal).\n- `url_changed` (boolean, nullable): True when the submitted profile URL is probably outdated: it was not found, while exactly one other profile matching the person was found with confidence. LinkedIn does not redirect a profile whose address was changed, so the old address stops working. The replacement is in `suggested_url`.\n- `suggested_url` (string, nullable): The profile that probably replaces an outdated submitted URL, set only when `url_changed` is true. It is also the first recommendation.\n- `type` (string, nullable): The social network the assessed value belongs to. Always `linkedin` on these operations — Delpha assesses no other network today — it is provenance, not a discriminator.\n\n**Envelope:** `status_code` `200` means the job succeeded and `result` is populated; `202` means it is still running and `result` is `null`. A failed job comes back with `status` `\"ERROR\"`, its `status_code`, a stable `code` naming the cause and a `message` explaining it; an unknown or expired `job_id` is answered as a tool error.\n\n**Polling:** the MCP server holds this call and re-polls the job internally for up to ~25 seconds (this validation typically completes in ~10 seconds), so one call usually returns the final result. If `status_code` is still `202` after that, the job is still running and this tool accepts the same job id again. Re-reading a result never re-runs or re-charges the job.\n\n**Cost:** no new charge. Reading a result finalizes the job's accounting once: it settles the charge made at submission when the result is first delivered, or refunds it when the job failed, exceeded its time limit or produced no usable result, and marks a timed-out job failed. A repeat returns the same answer and never charges again.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "description": "Opaque job identifier returned by `findAndValidateLinkedInProfile`."
+     }
+    },
+    "required": [
+     "job_id"
+    ],
+    "additionalProperties": false
+   },
+   "annotations": {
+    "title": "Get LinkedIn profile result",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   }
+  }
+ ]
+}

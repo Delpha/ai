@@ -29,3 +29,12 @@ its `references/`. Use illustrative examples without promising fixed lookup resu
 4. Open a pull request. CI runs the same checks and scans the Git history for credentials.
 
 When the MCP server adds or renames a tool, update `TOOLS` in `scripts/check_release.py`.
+
+## Plugin evals
+
+The Claude Code plugin carries an eval suite in `providers/claude/plugin/evals/`, run with
+`claude plugin eval` against mocked Delpha tools (no Credit is spent). Every run and judge vote is a
+paid model call on your account, so start with one case:
+`claude plugin eval providers/claude/plugin --case parent-sephora-brazil --runs 1 --ablation none -j 2 --threshold 0.75 --no-publish`.
+CI runs the suite on pushes to `main` that change the plugin or the skills, not on pull requests.
+The [evals README](providers/claude/plugin/evals/README.md) covers cost, mocks and writing a case.
