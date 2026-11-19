@@ -16,7 +16,7 @@ PLUGINS = {
     "cursor": (".cursor-plugin/plugin.json", "mcp.json", ".cursor-plugin/marketplace.json"),
 }
 MCP_URL = "https://mcp.delpha.ai/mcp"
-# The 16 tools served by the Delpha MCP server; update with the MCP release notes.
+# The 19 tools served by the Delpha MCP server; update with the MCP release notes.
 TOOLS = {
     "findAndValidateUltimateParent", "getUltimateParentResult",
     "findAndValidateWebsite", "getWebsiteResult",
@@ -26,9 +26,10 @@ TOOLS = {
     "findAndValidateLinkedInProfile", "getLinkedInProfileResult",
     "validateAndNormalizePhone", "getPhoneResult",
     "validateAndNormalizeName", "getNameResult",
+    "matchAccounts", "getAccountRecipe", "saveAccountRecipe",
 }
 REST_ONLY = {"findAndValidatePhone", "findAndValidateName"}  # REST operationIds, named in rest-api.md
-TOOL = re.compile(r"\b(?:findAndValidate\w+|validateAndNormalize\w+|get\w+Result)\b")
+TOOL = re.compile(r"\b(?:findAndValidate\w+|validateAndNormalize\w+|get\w+Result|match\w*Accounts|(?:get|save)\w*Recipe)\b")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 JSON_BLOCK = re.compile(r"```json\s*\n(.*?)\n```", re.S)
 

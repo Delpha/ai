@@ -20,7 +20,12 @@ Read the [parent reference](../delpha/references/ultimate-parent.md) for result 
 4. Read `relationship_type`, `confidence` and available evidence. Report missing or conflicting
    evidence and shared ownership. Confidence is 0–1; choose review thresholds for the task.
    A registry source label does not prove LEI verification when `lei_data` is null.
-5. Assess new-logo status only from supplied or authorized CRM evidence:
+5. When the user's CRM is reachable through an authorized connector, gather candidates with
+   `result.crm_lookup` and `getAccountRecipe`, then call `matchAccounts` once with the commercial
+   parent as `reference` ([account matching](../delpha/references/account-matching.md)).
+   `confident` confirms presence; `no_match` confirms absence only among the records sent;
+   `ambiguous` needs review.
+6. Assess new-logo status only from supplied or authorized CRM evidence:
    - Commercial parent confirmed present: route under that existing account.
    - Commercial parent confirmed absent: propose a new-logo route.
    - CRM presence unknown: resolve the parent and state what CRM check is needed.

@@ -32,13 +32,13 @@ The Delpha plugins bundle the connection and skills.
 ## Contract
 
 Use the tool list your client receives. The [hub](../SKILL.md#delpha) lists the eight
-submit/result pairs. REST company search, batches, synchronous phone and pricing are not MCP tools.
+submit/result pairs, plus `matchAccounts` and its two recipe tools ([account matching](account-matching.md)). REST company search, batches, synchronous phone and pricing are not MCP tools.
 
 Inputs are closed: unknown fields are rejected, including inside legal-ID `address`.
 Phone accepts `country_code`, not REST's `country`. Website and LinkedIn tools
 omit REST's `email` field.
 
-Submit once, then call the matching result tool with its returned `job_id`.
+`matchAccounts` answers in one call. For every other capability, submit once, then call the matching result tool with its returned `job_id`.
 It waits/polls internally. Only retrieve again after a returned `status_code: 202`,
 after a wait. Do not launch concurrent result calls for one job.
 
