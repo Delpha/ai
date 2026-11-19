@@ -21,7 +21,7 @@ a warehouse or a CSV), format them, and send at most 100 per call.
   `commercial_name`, `website`, `country`, `legal_id`, `legal_id_type` and `lei`.
   You build it, for example from a commercial-parent result.
 - `candidates`: your records. `id` and `name` are required. They can also carry
-  `website`, `country`, `legal_id`, `legal_id_type`, `lei`, `parent_id` and `hierarchy`.
+  `website`, `country`, `legal_id`, `legal_id_type`, `lei` and `hierarchy`.
 - `country` takes an English name, a common alias or an ISO alpha-2/alpha-3 code.
   It is compared as an ISO code, and a value either side cannot identify is not compared.
 - Send every field you hold, even one that may lower a score. A mismatch is evidence too.
@@ -31,9 +31,10 @@ a warehouse or a CSV), format them, and send at most 100 per call.
 ## Reading the result
 
 - `match_status`:
-  - `confident`: one record stands apart.
-  - `ambiguous`: read the top two.
-  - `no_match`: none of the records **you sent** is this entity.
+  - `confident`: one record stands apart from every other qualifying record.
+  - `ambiguous`: the top two are within the ambiguity gap; present both. The status is
+    read before `top_k` cuts the list, so `top_k: 1` can still be `ambiguous`.
+  - `no_match`: none of the records **you sent** qualified.
 - `matches`: best first. Each carries your `id` and `name`, a `confidence` (0–1,
   comparable within one response only), an `evidence_level` and every `signals` entry,
   with the two values compared.
@@ -56,8 +57,11 @@ candidate fields. Without one, it returns presets to detect the platform. `saveA
 stores the mapping so later sessions skip the mapping step; a second save for the same
 platform replaces the first.
 
-Both are free. Follow the tool descriptions on when to ask the user before saving.
-CSV and other ad-hoc exports are mapped per run and never saved.
+Both are free. Save a preset without a question only when exactly one preset's
+`detect` markers are all present (the package preset wins over plain Salesforce) and
+the read succeeded (`store: "ok"`). Ask the user before saving a custom mapping, a
+preset you edited, or a save that would replace the team's existing recipe for that
+platform. CSV and other ad-hoc exports are mapped per run and never saved.
 
 The match reserves and settles Credits in the same call; see [credits](credits-and-limits.md).
 REST: `POST /v1/account-match` returns `200` with the same result.
