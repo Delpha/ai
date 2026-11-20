@@ -45,6 +45,8 @@ accepted fields and enums; MCP has a narrower surface.
 - Batch: `POST /v1/<usecase>/batch` accepts `{"items": [...]}`, 1–100 items.
   Retrieve at `GET /v1/<usecase>/batch/{job_id}`. Preserve input positions for correlation.
   Successful items settle; failed items are refunded. Fetch expiring `result_url` links promptly.
+- Account matching: `POST /v1/account-match` is synchronous: `200` with your records ranked,
+  no `job_id`. Send at most 100 candidates. See [account matching](account-matching.md).
 - Company search: `GET /v1/company`, for example `account_name` and `country_code`.
   Follow published filters/pagination. This is a charged REST operation, not an MCP tool.
 - Synchronous phone: `GET /v1/phone` accepts `phone` and, for national format, `country`.

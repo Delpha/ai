@@ -74,9 +74,13 @@ Skills-aware clients can also copy the folders in [skills/](skills/).
 | Phone | `validateAndNormalizePhone` | `getPhoneResult` |
 | Person name | `validateAndNormalizeName` | `getNameResult` |
 | LinkedIn profile | `findAndValidateLinkedInProfile` | `getLinkedInProfileResult` |
+| Account matching | `matchAccounts` (answers in the same call) | — |
+
+`getAccountRecipe` and `saveAccountRecipe` read and save your team's mapping from your
+system's columns onto the fields account matching expects; they are free.
 
 Phone and name validate values you already hold; they do not discover people or numbers.
-A submission reserves Credits and returns a `job_id`; the result tool settles or refunds that
+A submission reserves Credits and returns a `job_id` (account matching answers directly); the result tool settles or refunds that
 reservation without a new charge. Repeating a submission starts another charged job.
 Read the [current prices](https://api.delpha.io/v1/pricing); all access methods share
 [one balance](https://delpha.ai/pricing).

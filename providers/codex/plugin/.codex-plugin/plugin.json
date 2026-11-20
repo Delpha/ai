@@ -1,6 +1,6 @@
 {
   "name": "delpha",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Verify commercial identity for AI agents: which company a record refers to, its commercial parent and its business contacts, via the Delpha MCP server and agent skills",
   "author": {
     "name": "Delpha",

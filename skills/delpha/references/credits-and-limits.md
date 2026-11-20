@@ -13,6 +13,8 @@ A live submit reserves Credits before work starts.
 The result read that delivers completion can settle that reservation or refund failed work.
 Retrieval adds no additional charge and does not rerun the job, but can mutate accounting.
 For batches, successful items settle and failed items are refunded.
+An account match is one synchronous call: it reserves and settles in that call, whatever the
+number of candidates. The recipe tools are free.
 
 Repeating a submission can create another job and charge.
 REST callers should reuse an [idempotency key](rest-api.md#asynchronous-verification)
