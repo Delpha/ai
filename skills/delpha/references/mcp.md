@@ -38,11 +38,14 @@ Inputs are closed: unknown fields are rejected, including inside legal-ID `addre
 Phone accepts `country_code`, not REST's `country`. Website and LinkedIn tools
 omit REST's `email` field.
 
-`matchAccounts` answers in one call. For every other capability, submit once, then call the matching result tool with its returned `job_id`.
-It waits/polls internally. Only retrieve again after a returned `status_code: 202`,
-after a wait. Do not launch concurrent result calls for one job.
+For the eight submit/result pairs, submit once, then call the matching result tool with its
+returned `job_id`. It waits/polls internally. Only retrieve again after a returned
+`status_code: 202`, after a wait. Do not launch concurrent result calls for one job.
+`matchAccounts` answers in the same call, with no `job_id` and nothing to retrieve.
+`getAccountRecipe` and `saveAccountRecipe` are free and return their own payload directly.
 
-The MCP envelope carries `message`, `status`, `status_code`, `code`, and `result`.
+The submit, result and `matchAccounts` tools return an envelope carrying `message`, `status`,
+`status_code`, `code`, and `result`.
 Result retrieval can settle/refund the original reservation, adds no additional charge and
 is idempotent; its accounting effects mean it is not read-only.
 REST idempotency headers are not MCP tool arguments.

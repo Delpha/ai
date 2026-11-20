@@ -21,14 +21,20 @@ Read the [parent reference](../delpha/references/ultimate-parent.md) for result 
    evidence and shared ownership. Confidence is 0–1; choose review thresholds for the task.
    A registry source label does not prove LEI verification when `lei_data` is null.
 5. When the user's CRM is reachable through an authorized connector, gather candidates with
-   `result.crm_lookup` and `getAccountRecipe`, then call `matchAccounts` once with the commercial
-   parent as `reference` ([account matching](../delpha/references/account-matching.md)).
-   `confident` confirms presence; `no_match` confirms absence only among the records sent;
-   `ambiguous` needs review.
+   `result.crm_lookup` and `getAccountRecipe`. If the query returns no record, do not call
+   `matchAccounts`. Otherwise call it once with the commercial parent as `reference` and
+   every returned record, up to 100, as `candidates`
+   ([account matching](../delpha/references/account-matching.md)).
 6. Assess new-logo status only from supplied or authorized CRM evidence:
-   - Commercial parent confirmed present: route under that existing account.
-   - Commercial parent confirmed absent: propose a new-logo route.
-   - CRM presence unknown: resolve the parent and state what CRM check is needed.
+   - Present: route under an existing account only when `matchAccounts` returned it with
+     `match_status: confident` and `evidence_level` `strong` or `normal`; report any
+     conflicting signal.
+   - Absent: propose a new-logo route only after a `no_match`, or a query that returned no
+     record, from a search that covered the parent's `crm_lookup` identifiers (domains,
+     names, legal IDs) and sent every record it returned.
+   - Otherwise (`ambiguous`, a `weak` match, a narrower search, more than 100 records, or
+     no CRM access): report the route as unresolved, name the commercial parent, and state
+     what CRM check or review is needed.
 
 Lead with the decision, then name the commercial parent, relationship, confidence and supporting
 source when available. Include a concise route: queried company → commercial parent.

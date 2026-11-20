@@ -7,7 +7,9 @@ there is no `job_id` and no result tool. A record is a Delpha match only when
 other means is your own conclusion; Delpha makes no claim about it.
 
 Delpha never reads your systems. You gather the candidate records (from a CRM connector,
-a warehouse or a CSV), format them, and send at most 100 per call.
+a warehouse or a CSV), format them, and send 1 to 100 per call. If your search found no
+record, do not call `matchAccounts`: an empty `candidates` list is refused (`422`), and
+the empty search is itself the answer for what it covered.
 
 ## Request
 
@@ -18,8 +20,9 @@ a warehouse or a CSV), format them, and send at most 100 per call.
 ```
 
 - `reference`: the entity you are looking for. Its fields are `legal_name`,
-  `commercial_name`, `website`, `country`, `legal_id`, `legal_id_type` and `lei`.
-  You build it, for example from a commercial-parent result.
+  `commercial_name`, `website`, `country`, `legal_id`, `legal_id_type` and `lei`; it needs
+  `legal_name` or `commercial_name`, or the call is refused (`422`). You build it, for
+  example from a commercial-parent result.
 - `candidates`: your records. `id` and `name` are required. They can also carry
   `website`, `country`, `legal_id`, `legal_id_type`, `lei` and `hierarchy`.
 - `country` takes an English name, a common alias or an ISO alpha-2/alpha-3 code.
@@ -31,13 +34,17 @@ a warehouse or a CSV), format them, and send at most 100 per call.
 ## Reading the result
 
 - `match_status`:
-  - `confident`: one record stands apart from every other qualifying record.
-  - `ambiguous`: the top two are within the ambiguity gap; present both. The status is
-    read before `top_k` cuts the list, so `top_k: 1` can still be `ambiguous`.
+  - `confident`: the best record is the only one that qualified, or leads the next by at
+    least `settings.confidence.ambiguity_gap`.
+  - `ambiguous`: the second qualifying record is within that gap of the first. Keep `top_k`
+    at 2 or more (the default is 5) and present both for review. The status is read
+    before `top_k` cuts the list, so `top_k: 1` can return one match marked `ambiguous`:
+    report it as ambiguous, never as confirmed.
   - `no_match`: none of the records **you sent** qualified.
 - `matches`: best first. Each carries your `id` and `name`, a `confidence` (0–1,
   comparable within one response only), an `evidence_level` and every `signals` entry,
-  with the two values compared.
+  with the two values compared. `evidence_level` is `strong`, `normal` or `weak`; a
+  `weak` match compared the name alone and is a lead, not an answer.
 - `settings`: the configuration each score was computed with.
 
 `no_match` is complete only for the records sent. If your query was narrow, say what
@@ -57,11 +64,15 @@ candidate fields. Without one, it returns presets to detect the platform. `saveA
 stores the mapping so later sessions skip the mapping step; a second save for the same
 platform replaces the first.
 
-Both are free. Save a preset without a question only when exactly one preset's
-`detect` markers are all present (the package preset wins over plain Salesforce) and
-the read succeeded (`store: "ok"`). Ask the user before saving a custom mapping, a
-preset you edited, or a save that would replace the team's existing recipe for that
-platform. CSV and other ad-hoc exports are mapped per run and never saved.
+Both are free and answer directly, with no `job_id` and no result tool. `store: "unavailable"`
+means the read failed, not that the team has no recipe.
+
+Ask the user before every `saveAccountRecipe` call, a detected preset included. Show the
+platform, the object and the field mapping to be stored, say whether it replaces a recipe
+the team already has for that platform (unknown when the read failed), and save only on
+their yes. To detect a preset, use the one whose `detect` markers are all present (the
+package preset wins over plain Salesforce). CSV and other ad-hoc exports are mapped per
+run and never saved.
 
 The match reserves and settles Credits in the same call; see [credits](credits-and-limits.md).
 REST: `POST /v1/account-match` returns `200` with the same result.

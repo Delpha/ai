@@ -32,8 +32,10 @@ REST: `https://api.delpha.io`, with a key from
 Read [MCP](references/mcp.md) or [REST](references/rest-api.md) for that surface's contract.
 
 1. Use only declared fields. MCP can omit fields accepted by REST.
-2. Submit once and retain `job_id` (`matchAccounts` answers in the same call, with none). A submission reserves Credits; repeating it can create
-   another charged job. Do not repeat a job to obtain a preferred answer.
+2. For a submit/result pair, submit once and retain `job_id`. A submission reserves Credits;
+   repeating it can create another charged job. Do not repeat a job to obtain a preferred
+   answer. `matchAccounts` answers in the same call, with no `job_id`, and each call is
+   charged. The recipe tools are free and answer directly.
 3. Call the matching result tool once; it polls internally. Only retrieve again after a
    returned `status_code: 202`, after a wait. Stop on completion or terminal error.
 4. Retrieval can settle/refund the original reservation. It is idempotent and adds no
@@ -43,8 +45,9 @@ Read [MCP](references/mcp.md) or [REST](references/rest-api.md) for that surface
 
 ## Interpret and apply
 
-- MCP envelopes carry `message`, `status`, `status_code`, a stable `code` and the
-  entity-specific `result`. Do not expect REST-only request metadata in MCP.
+- Submit, result and `matchAccounts` envelopes carry `message`, `status`, `status_code`, a
+  stable `code` and the entity-specific `result`; the recipe tools return their own payload.
+  Do not expect REST-only request metadata in MCP.
 - Common `validity` (`-1/0/1`) and `consistency` (`0/1`) are discrete.
   `accuracy` and `completeness` are continuous. Treat `-1` as missing where allowed.
   Name uses per-field objects; parent resolution uses `confidence`. Read the reference.
